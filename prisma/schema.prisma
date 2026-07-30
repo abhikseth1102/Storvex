@@ -1,0 +1,319 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+enum Role {
+  ADMIN
+  CASHIER
+}
+
+enum PaymentMode {
+  CASH
+  CARD
+  CREDIT
+  SPLIT
+  UPI
+}
+
+enum AdjustmentType {
+  DAMAGE
+  LOSS
+  AUDIT
+  PROMO
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  address   String?
+  phone     String?
+  gstin     String?
+  pan       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users            User[]
+  products         Product[]
+  customers        Customer[]
+  invoices         SaleInvoice[]
+  suppliers        Supplier[]
+  supplierPayments   SupplierPayment[]
+  purchaseOrders     PurchaseOrder[]
+  stockAdjustments   StockAdjustment[]
+  customerPayments   CustomerPayment[]
+  accounts           Account[]
+  ledgerTransactions LedgerTransaction[]
+
+  @@map("tenants")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  email     String   @unique
+  password  String
+  fullName  String   @map("full_name")
+  role      Role     @default(CASHIER)
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+model Category {
+  id       String    @id @default(uuid())
+  name     String    @unique
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  categoryId  String   @map("category_id")
+  barcode     String?
+  sku         String?
+  name        String
+  brand       String?
+  size        String?
+  color       String?
+  costPrice   Float    @map("cost_price")
+  sellingRate Float    @map("selling_rate") // Retail MRP
+  wholesaleRate Float  @default(0) @map("wholesale_rate") // B2B Rate
+  gstRate     Float    @default(0) @map("gst_rate")
+  stockQty    Int      @default(0) @map("stock_qty")
+  hsnCode     String?  @map("hsn_code")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category  Category   @relation(fields: [categoryId], references: [id])
+  saleItems SaleItem[]
+  poItems   POItem[]
+  adjustments StockAdjustment[]
+
+  @@index([tenantId])
+  @@index([barcode])
+  @@map("products")
+}
+
+model StockAdjustment {
+  id        String         @id @default(uuid())
+  tenantId  String         @map("tenant_id")
+  productId String         @map("product_id")
+  type      AdjustmentType
+  quantity  Int
+  reason    String?
+  createdAt DateTime       @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([tenantId])
+  @@map("stock_adjustments")
+}
+
+model Customer {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  name          String
+  phone         String?
+  city          String?
+  companyName   String?  @map("company_name")
+  gstin         String?
+  billingAddress String? @map("billing_address")
+  loyaltyPoints Int      @default(0) @map("loyalty_points")
+  balance       Float    @default(0) // Amount the customer owes the store
+  createdAt     DateTime @default(now())
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoices SaleInvoice[]
+  payments CustomerPayment[]
+
+  @@index([tenantId])
+  @@map("customers")
+}
+
+model CustomerPayment {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  customerId  String   @map("customer_id")
+  amount      Float
+  paymentMode String   @map("payment_mode") // "CASH", "UPI", "CARD"
+  referenceNo String?  @map("reference_no")
+  createdAt   DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@map("customer_payments")
+}
+
+model Account {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  name        String   // "Main Cash Drawer", "HDFC Bank"
+  type        String   // "CASH", "BANK"
+  balance     Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  transactions LedgerTransaction[]
+
+  @@index([tenantId])
+  @@map("accounts")
+}
+
+model LedgerTransaction {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  accountId   String   @map("account_id")
+  type        String   // "CREDIT" (money in), "DEBIT" (money out)
+  amount      Float
+  description String
+  referenceId String?  @map("reference_id") // ID of SaleInvoice, SupplierPayment, etc.
+  createdAt   DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([accountId])
+  @@map("ledger_transactions")
+}
+
+model SaleInvoice {
+  id            String      @id @default(uuid())
+  tenantId      String      @map("tenant_id")
+  customerId    String?     @map("customer_id")
+  invoiceNumber String      @map("invoice_number")
+  grossAmount   Float       @map("gross_amount")
+  discountAmt   Float       @default(0) @map("discount_amt")
+  gstAmount     Float       @default(0) @map("gst_amount")
+  netAmount     Float       @map("net_amount")
+  paymentMode   PaymentMode @map("payment_mode")
+  paidCash      Float       @default(0) @map("paid_cash")
+  paidCard      Float       @default(0) @map("paid_card")
+  paidCredit    Float       @default(0) @map("paid_credit")
+  createdAt     DateTime    @default(now())
+  isRefunded    Boolean     @default(false) @map("is_refunded")
+  type          String      @default("SALE") // "SALE" or "REFUND"
+  isB2b         Boolean     @default(false) @map("is_b2b")
+  dueDate       DateTime?   @map("due_date")
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer?  @relation(fields: [customerId], references: [id])
+  items    SaleItem[]
+
+  @@index([tenantId])
+  @@map("sale_invoices")
+}
+
+model SaleItem {
+  id         String @id @default(uuid())
+  invoiceId  String @map("invoice_id")
+  productId  String @map("product_id")
+  quantity   Int
+  unitRate   Float  @map("unit_rate")
+  discountAmt Float @default(0) @map("discount_amt")
+  gstRate    Float  @default(0) @map("gst_rate")
+  gstAmount  Float  @default(0) @map("gst_amount")
+  totalPrice Float  @map("total_price")
+
+  invoice SaleInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product     @relation(fields: [productId], references: [id])
+
+  @@map("sale_items")
+}
+
+model Supplier {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  name        String
+  contactName String?  @map("contact_name")
+  email       String?
+  phone       String?
+  address     String?
+  gstin       String?
+  balance     Float    @default(0) // Amount the store owes to the supplier
+  createdAt   DateTime @default(now())
+
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchaseOrders PurchaseOrder[]
+  payments       SupplierPayment[]
+
+  @@index([tenantId])
+  @@map("suppliers")
+}
+
+model SupplierPayment {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  supplierId  String   @map("supplier_id")
+  amount      Float
+  paymentMode String   @map("payment_mode") // "CASH", "UPI", "BANK_TRANSFER", "CHEQUE"
+  referenceNo String?  @map("reference_no")
+  createdAt   DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([supplierId])
+  @@map("supplier_payments")
+}
+
+enum POStatus {
+  DRAFT
+  ISSUED
+  RECEIVED
+}
+
+model PurchaseOrder {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  supplierId  String   @map("supplier_id")
+  poNumber    String   @map("po_number")
+  status      POStatus @default(DRAFT)
+  totalAmount Float    @map("total_amount")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplier Supplier   @relation(fields: [supplierId], references: [id])
+  items    POItem[]
+
+  @@index([tenantId])
+  @@map("purchase_orders")
+}
+
+model POItem {
+  id              String @id @default(uuid())
+  purchaseOrderId String @map("purchase_order_id")
+  productId       String @map("product_id")
+  quantity        Int
+  unitCost        Float  @map("unit_cost")
+  gstAmount       Float  @default(0) @map("gst_amount")
+  totalCost       Float  @map("total_cost")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id])
+
+  @@map("po_items")
+}

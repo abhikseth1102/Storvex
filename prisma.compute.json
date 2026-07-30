@@ -1,0 +1,7 @@
+{
+  "app": {
+    "name": "storvex",
+    "framework": "nextjs",
+    "httpPort": 3000
+  }
+}

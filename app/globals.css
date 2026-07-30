@@ -8,19 +8,43 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  --font-serif: var(--font-serif, ui-serif, Georgia, serif);
+  --font-mono: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  
+  /* Premium Indian Retail Palette */
+  --color-brand-cream: #FDFBF7;
+  --color-brand-charcoal: #1C1C1E;
+  --color-brand-gold: #9B7226;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@custom-variant dark (&:is(.dark *));
+
+.dark {
+  --background: #0f172a;
+  --foreground: #f8fafc;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--color-brand-cream);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+@keyframes animate-gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.bg-animated-gradient {
+  background-size: 300% 300%;
+  animation: animate-gradient 8s ease infinite;
+}
+
+.bg-woven-linen {
+  background-image: 
+    linear-gradient(90deg, rgba(28, 28, 30, 0.04) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(28, 28, 30, 0.04) 1px, transparent 1px);
+  background-size: 4px 4px;
 }
