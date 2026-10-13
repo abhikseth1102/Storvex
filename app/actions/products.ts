@@ -87,3 +87,82 @@ export async function deleteProduct(productId: string) {
   revalidatePath('/pos')
   revalidatePath('/inventory')
 }
+
+export type BulkProductRow = {
+  name: string
+  categoryName: string
+  sku?: string
+  costPrice: number
+  sellingRate: number
+  wholesaleRate?: number
+  gstRate?: number
+  stockQty: number
+}
+
+// 4. Bulk CSV / Store Catalog Migration Action (Review 3 Milestone)
+export async function bulkImportProducts(rows: BulkProductRow[]) {
+  const session = await auth()
+  if (!session?.user?.tenantId) throw new Error('Unauthorized: No tenant context found')
+  const tenantId = session.user.tenantId
+
+  if (!rows || rows.length === 0) {
+    throw new Error('No valid product rows provided for import')
+  }
+
+  let importedCount = 0
+
+  await prisma.$transaction(async (tx) => {
+    for (const row of rows) {
+      if (!row.name || isNaN(row.sellingRate) || isNaN(row.costPrice)) continue
+
+      const catName = (row.categoryName || 'Apparel').trim()
+      const category = await tx.category.upsert({
+        where: { name: catName },
+        update: {},
+        create: { name: catName },
+      })
+
+      const sku = (row.sku || `SKU-${Math.random().toString(36).substring(2, 8).toUpperCase()}`).trim()
+      const existing = await tx.product.findFirst({
+        where: { tenantId, sku },
+      })
+
+      if (existing) {
+        await tx.product.update({
+          where: { id: existing.id },
+          data: {
+            name: row.name.trim(),
+            categoryId: category.id,
+            costPrice: Number(row.costPrice),
+            sellingRate: Number(row.sellingRate),
+            wholesaleRate: Number(row.wholesaleRate || Math.round(row.sellingRate * 0.8)),
+            gstRate: Number(row.gstRate ?? 12),
+            stockQty: Number(row.stockQty || 0),
+          },
+        })
+      } else {
+        await tx.product.create({
+          data: {
+            tenantId,
+            name: row.name.trim(),
+            categoryId: category.id,
+            sku,
+            barcode: sku,
+            costPrice: Number(row.costPrice),
+            sellingRate: Number(row.sellingRate),
+            wholesaleRate: Number(row.wholesaleRate || Math.round(row.sellingRate * 0.8)),
+            gstRate: Number(row.gstRate ?? 12),
+            stockQty: Number(row.stockQty || 0),
+          },
+        })
+      }
+      importedCount++
+    }
+  })
+
+  revalidatePath('/')
+  revalidatePath('/pos')
+  revalidatePath('/inventory')
+
+  return { success: true, importedCount }
+}

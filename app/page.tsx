@@ -3,8 +3,9 @@ import { prisma } from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import SignOutButton from '@/components/SignOutButton'
 import AddProductModal from '@/components/AddProductModal'
+import BulkImportModal from '@/components/BulkImportModal'
+import AskStorvexModal from '@/components/AskStorvexModal'
 import BoutiqueNav from '@/components/BoutiqueNav'
-import { Search } from 'lucide-react'
 
 export default async function DashboardPage() {
   const session = await auth()
@@ -28,12 +29,39 @@ export default async function DashboardPage() {
     },
   })
 
-  // 2. Stats for the 4 Widgets
-  const totalProducts = await prisma.product.count({ where: { tenantId } })
-  const lowStockCount = await prisma.product.count({ where: { tenantId, stockQty: { lt: 10 } } })
-  
+  // 2. Stats for the 4 Widgets & AI Copilot Context
+  const allProducts = await prisma.product.findMany({
+    where: { tenantId },
+    select: { name: true, sku: true, stockQty: true, costPrice: true, sellingRate: true },
+  })
+  const totalProducts = allProducts.length
+  const lowStockItems = allProducts.filter((p) => p.stockQty < 10)
+  const lowStockCount = lowStockItems.length
+
+  const totalInventoryCost = allProducts.reduce((s, p) => s + Math.max(0, p.stockQty) * p.costPrice, 0)
+  const totalRetailValue = allProducts.reduce((s, p) => s + Math.max(0, p.stockQty) * p.sellingRate, 0)
+
   const retailInvoices = await prisma.saleInvoice.count({ where: { tenantId, isB2b: false, type: 'SALE' } })
   const wholesaleInvoices = await prisma.saleInvoice.count({ where: { tenantId, isB2b: true, type: 'SALE' } })
+  const revenueAgg = await prisma.saleInvoice.aggregate({
+    where: { tenantId, type: 'SALE', isRefunded: false },
+    _sum: { netAmount: true },
+  })
+  const creditCustomers = await prisma.customer.findMany({
+    where: { tenantId, balance: { gt: 0 } },
+    select: { name: true, balance: true, loyaltyPoints: true },
+  })
+
+  const copilotContext = {
+    totalProducts,
+    lowStockItems,
+    totalInventoryCost,
+    totalRetailValue,
+    retailInvoices,
+    wholesaleInvoices,
+    totalRevenue: revenueAgg._sum.netAmount || 0,
+    creditCustomers,
+  }
 
   return (
     <div 
@@ -65,20 +93,9 @@ export default async function DashboardPage() {
             </span>
           </div>
 
-          {/* Ambient AI Command Bar */}
+          {/* Interactive AI Retail Copilot & Command Bar */}
           <div className="hidden md:flex w-1/3 justify-center">
-            <div className="relative w-full max-w-md group">
-              <Search strokeWidth={1.5} className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-charcoal/40 group-hover:text-brand-gold transition-colors" />
-              <input 
-                type="text" 
-                placeholder="Ask Storvex or search..." 
-                className="w-full bg-brand-cream/50 border border-brand-charcoal/10 rounded-full py-2 pl-10 pr-12 text-sm text-brand-charcoal placeholder:text-brand-charcoal/40 focus:outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold/50 transition-all shadow-sm"
-              />
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-medium text-brand-charcoal/40 bg-white border border-brand-charcoal/10 rounded-md shadow-sm">⌘</kbd>
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-medium text-brand-charcoal/40 bg-white border border-brand-charcoal/10 rounded-md shadow-sm">K</kbd>
-              </div>
-            </div>
+            <AskStorvexModal context={copilotContext} />
           </div>
 
           {/* Profile & Actions */}
@@ -107,7 +124,8 @@ export default async function DashboardPage() {
               Command inventory, unlock real-time intelligence, and scale your brand.
             </p>
           </div>
-          <div className="flex-shrink-0">
+          <div className="flex flex-wrap items-center gap-3 flex-shrink-0">
+            <BulkImportModal />
             <AddProductModal categories={categories} />
           </div>
         </div>

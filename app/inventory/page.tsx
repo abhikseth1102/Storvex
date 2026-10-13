@@ -5,6 +5,7 @@ import Link from 'next/link'
 import SignOutButton from '@/components/SignOutButton'
 import InventoryTable from '@/components/InventoryTable'
 import AddProductModal from '@/components/AddProductModal'
+import BulkImportModal from '@/components/BulkImportModal'
 import { formatINR } from '@/lib/utils'
 
 export default async function InventoryPage() {
@@ -92,6 +93,7 @@ export default async function InventoryPage() {
               >
                 🏷️ Print Barcodes
               </Link>
+              <BulkImportModal />
               <AddProductModal categories={categories} />
             </div>
             <div className="pl-2 border-l border-brand-charcoal/10">
